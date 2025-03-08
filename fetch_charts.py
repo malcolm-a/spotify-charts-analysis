@@ -51,7 +51,7 @@ def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end
             connection_string = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
             engine = sa.create_engine(connection_string) 
             def save_data(dt: date, df: pd.DataFrame):
-                html_tables.to_sql(f'chart_data_{source}', engine, if_exists="replace", index=False)
+                df.to_sql(f'chart_data_{source}', engine, if_exists="replace", index=False)
                 print(f"Inserted data from {dt} into chart_data_{source}")
         case _:
             raise ValueError(f"Target {target} is invalid.")
