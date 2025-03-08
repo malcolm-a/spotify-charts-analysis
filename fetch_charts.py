@@ -8,21 +8,13 @@ from dateutil.rrule import rrule, DAILY
 import psycopg2
 import sqlalchemy as sa
 import urllib3
+import db
 
 # Disables tls warnings in the console when fetching data
 urllib3.disable_warnings()
-
-# Connection parameters
-db_config = {
-    "host": "localhost", 
-    "port": 5432, 
-    "database": "postgres",  
-    "user": "postgres", 
-    "password": "postgres"  
-}
-
-    
+ 
 def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end: date = None):
+    
     # start and end are yesterday by default to fetch the latest data
     start = datetime.today() - timedelta(days=1) if not start or start >= datetime.today() else start
     end = datetime.today() - timedelta(days=1) if not end or end >= datetime.today() else end
@@ -48,8 +40,8 @@ def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end
                 df.to_csv(f"{save_path}/{dt}.csv")  
                 print(f"Inserted data from {dt} into {save_path}/{dt}.csv")  
         case 'sql':
-            connection_string = f"postgresql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['database']}"
-            engine = sa.create_engine(connection_string) 
+            # connect to the db and create save_data fn to save data in the corresponding table
+            engine = db.connection.get_engine()
             def save_data(dt: date, df: pd.DataFrame):
                 df.to_sql(f'chart_data_{source}', engine, if_exists="replace", index=False)
                 print(f"Inserted data from {dt} into chart_data_{source}")
