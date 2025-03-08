@@ -60,11 +60,12 @@ def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end
     for current_date in rrule(DAILY, dtstart=start, until=end):
         dt = current_date.strftime("%Y%m%d")
         with requests.get(f'http://www.kworb.net/{resource_path}/{dt}.html', verify=False) as response:
-            html_tables = pd.read_html(StringIO(response.text))[0]
+            response.encoding = 'utf-8'
+            html_tables = pd.read_html(StringIO(response.text), encoding='utf-8')[0]
             html_tables['date'] = current_date
             save_data(dt, html_tables)
 
 
 # example usages
 fetch_kworb_charts('apple', 'csv') # saves yesterday's apple music charts to a local csv file
-fetch_kworb_charts('itunes', 'sql', start=datetime(year=2025, month=3, day=1)) # saves itunes charts from 2025/03/01 to today in the db
+#fetch_kworb_charts('itunes', 'sql', start=datetime(year=2025, month=3, day=1)) # saves itunes charts from 2025/03/01 to today in the db
