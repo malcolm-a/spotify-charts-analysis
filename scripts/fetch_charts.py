@@ -7,7 +7,6 @@ from pathlib import Path
 import requests
 import urllib3
 
-
 # Disables tls warnings in the console when fetching data
 urllib3.disable_warnings()
  
@@ -43,7 +42,7 @@ def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end
     match target:
         case 'csv':
             # create the path if it doesn't exist and create save_data fn to save the csv there
-            save_path = f"../data/charts/{source}"
+            save_path = f"data/charts/{source}"
             Path(save_path).mkdir(parents=True, exist_ok=True)
             def save_data(dt: date, df: pd.DataFrame):
                 df.to_csv(f"{save_path}/{dt}.csv")  
