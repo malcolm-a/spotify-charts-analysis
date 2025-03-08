@@ -8,7 +8,7 @@ from dateutil.rrule import rrule, DAILY
 import psycopg2
 import sqlalchemy as sa
 import urllib3
-import db
+import db.connection
 
 # Disables tls warnings in the console when fetching data
 urllib3.disable_warnings()
