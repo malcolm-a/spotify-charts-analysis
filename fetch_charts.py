@@ -1,14 +1,12 @@
-import os
-from pathlib import Path
-import requests
-import pandas as pd
-from io import StringIO
 from datetime import date, datetime, timedelta
 from dateutil.rrule import rrule, DAILY
-import psycopg2
-import sqlalchemy as sa
-import urllib3
 import db.connection
+from io import StringIO
+import pandas as pd
+from pathlib import Path
+import requests
+import urllib3
+
 
 # Disables tls warnings in the console when fetching data
 urllib3.disable_warnings()
