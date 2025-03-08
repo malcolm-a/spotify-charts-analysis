@@ -12,7 +12,18 @@ import urllib3
 urllib3.disable_warnings()
  
 def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end: date = None):
-    
+    """fetches chart data from kworb.net
+
+    Args:
+        source (str): kworb.net charts source (apple, itunes, or radio)
+        target (str, optional): in which format to save the data. Defaults to 'sql'.
+        start (date, optional): first date to get the charts from. Defaults to yesterday.
+        end (date, optional): last date to get the charts from. Defaults to yesterday.
+
+    Raises:
+        ValueError: if the source is not valid
+        ValueError: if the target is not valid
+    """
     # start and end are yesterday by default to fetch the latest data
     start = datetime.today() - timedelta(days=1) if not start or start >= datetime.today() else start
     end = datetime.today() - timedelta(days=1) if not end or end >= datetime.today() else end
