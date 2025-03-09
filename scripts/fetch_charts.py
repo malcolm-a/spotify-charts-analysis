@@ -1,14 +1,74 @@
+from bs4 import BeautifulSoup
 from datetime import date, datetime, timedelta
 from dateutil.rrule import rrule, DAILY
 import db.connection
 from io import StringIO
 import pandas as pd
 from pathlib import Path
+import re
 import requests
 import urllib3
 
 # Disables tls warnings in the console when fetching data
 urllib3.disable_warnings()
+
+
+def fetch_artists():
+    url = 'http://www.kworb.net/spotify/artists.html'
+    try:
+        response = requests.get(url, verify=False)
+        response.encoding = 'utf-8'
+        
+        artist_links = BeautifulSoup(response.text, 'html.parser').select('table.addpos tbody tr td.text div a')
+        
+        artists_data = []
+        for link in artist_links:
+            artist_name = link.text.strip()
+            
+            spotify_id_match = re.search(r'/spotify/artist/([^_]+)_', link.get('href'))
+            spotify_id = spotify_id_match.group(1) if spotify_id_match else None
+            
+            artists_data.append({
+                'name': artist_name,
+                'spotify_id': spotify_id
+            })
+        engine = db.connection.get_engine()
+        
+        pd.DataFrame(artists_data).to_sql('artist', engine, if_exists='replace', index=False)
+        print("Fetched artists in the database")
+    
+    except Exception as e:
+        print(f"Error fetching artists: {e}")
+
+
+def fetch_artist_songs(artist_id):
+    """Fetch songs for a single artist"""
+    try:
+        url = f'http://www.kworb.net/spotify/artist/{artist_id}_songs.html'
+        response = requests.get(url, verify=False, timeout=10)
+        response.encoding = 'utf-8'
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        artist_songs = soup.select('table.addpos tbody tr td.text div a')
+        
+        songs = []
+        for song in artist_songs:
+            song_name = song.text.strip()
+            href = song.get('href')
+            spotify_id_match = re.search(r'/track/([^_]+)', href)
+            spotify_id = spotify_id_match.group(1) if spotify_id_match else None
+        
+            songs.append({
+                'name': song_name,
+                'song_id': spotify_id,
+                'artist_id': artist_id
+            })
+        
+        return songs
+    except Exception as e:
+        print(f"Error fetching songs for artist {artist_id}: {e}")
+        return []  # Return empty list on error
+
  
 def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end: date = None):
     """fetches chart data from kworb.net
