@@ -27,3 +27,5 @@ if ! docker compose up -d; then
     echo "Failed to start services with Docker Compose."
     exit 1
 fi
+
+exec $SHELL
