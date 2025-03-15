@@ -8,6 +8,10 @@ from pathlib import Path
 import re
 import requests
 import urllib3
+import concurrent.futures
+import time
+from tqdm import tqdm
+from sqlalchemy import text
 
 # Disables tls warnings in the console when fetching data
 urllib3.disable_warnings()
@@ -69,6 +73,51 @@ def fetch_artist_songs(artist_id):
         print(f"Error fetching songs for artist {artist_id}: {e}")
         return []  # Return empty list on error
 
+def fetch_artists_songs(batch_size=50, max_workers=10):
+    """Fetch songs for all artists in batches with concurrent requests"""
+    try:
+        # Get all artist IDs from database
+        session = db.connection.get_session()
+        result = session.execute(text("SELECT spotify_id FROM artist"))
+        spotify_ids = [row[0] for row in result]
+        session.close()
+        
+        print(f"Found {len(spotify_ids)} artists to process")
+        engine = db.connection.get_engine()
+        
+        # Process in batches
+        for i in range(0, len(spotify_ids), batch_size):
+            batch = spotify_ids[i:i+batch_size]
+            print(f"Processing batch {i//batch_size + 1}/{(len(spotify_ids)+batch_size-1)//batch_size}")
+            
+            # Use concurrent.futures to make requests in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all requests and map them to their artist_ids
+                future_to_artist = {executor.submit(fetch_artist_songs, artist_id): artist_id for artist_id in batch}
+                
+                # Process results as they complete
+                batch_songs = []
+                for future in tqdm(concurrent.futures.as_completed(future_to_artist), total=len(batch), desc="Artists"):
+                    artist_id = future_to_artist[future]
+                    try:
+                        songs = future.result()
+                        batch_songs.extend(songs)
+                    except Exception as e:
+                        print(f"Artist {artist_id} generated an exception: {e}")
+            
+            # Save this batch to the database
+            if batch_songs:
+                print(f"Saving batch of {len(batch_songs)} songs to database")
+                df = pd.DataFrame(batch_songs)
+                df.to_sql('song', engine, if_exists='append', index=False)
+            
+            # Wait a bit between batches to avoid overwhelming the server
+            time.sleep(1)
+        
+        print(f"Successfully fetched and saved songs for {len(spotify_ids)} artists")
+        
+    except Exception as e:
+        print(f"Error in main fetch_artists_songs function: {e}")
  
 def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end: date = None):
     """fetches chart data from kworb.net
