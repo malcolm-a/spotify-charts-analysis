@@ -73,7 +73,7 @@ def fetch_artist_songs(artist_id):
         print(f"Error fetching songs for artist {artist_id}: {e}")
         return []  # Return empty list on error
 
-def fetch_artists_songs(batch_size=50, max_workers=10):
+def fetch_artist_songs_batch(batch_size=50, max_workers=10):
     """Fetch songs for all artists in batches with concurrent requests"""
     try:
         # Get all artist IDs from database
@@ -178,3 +178,5 @@ def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end
 # example usages
 fetch_kworb_charts('apple', 'csv') # saves yesterday's apple music charts to a local csv file
 #fetch_kworb_charts('itunes', 'sql', start=datetime(year=2025, month=3, day=1)) # saves itunes charts from 2025/03/01 to today in the db
+#fetch_artists()
+#fetch_artists_songs_batch()
