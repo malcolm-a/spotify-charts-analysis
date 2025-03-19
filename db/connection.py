@@ -2,7 +2,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 
 db_config = {
-    "host": "localhost", 
+    "host": "10.31.33.186", 
     "port": 5433,  # Changed to match Docker's exposed port
     "database": "postgres",  
     "user": "postgres", 
