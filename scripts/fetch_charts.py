@@ -11,7 +11,7 @@ import urllib3
 import concurrent.futures
 import time
 from tqdm import tqdm
-from sqlalchemy import text
+from sqlalchemy import text, inspect, MetaData, Table, Column, String, create_engine
 
 # Disables tls warnings in the console when fetching data
 urllib3.disable_warnings()
@@ -73,7 +73,7 @@ def fetch_artist_songs(artist_id):
         print(f"Error fetching songs for artist {artist_id}: {e}")
         return []  # Return empty list on error
 
-def fetch_artist_songs_batch(batch_size=50, max_workers=10):
+def fetch_artists_songs_batch(batch_size=50, max_workers=10):
     """Fetch songs for all artists in batches with concurrent requests"""
     try:
         # Get all artist IDs from database
@@ -84,6 +84,24 @@ def fetch_artist_songs_batch(batch_size=50, max_workers=10):
         
         print(f"Found {len(spotify_ids)} artists to process")
         engine = db.connection.get_engine()
+        
+        # Drop song table if it exists and create it with correct schema and data types
+        inspector = inspect(engine)
+        if 'song' in inspector.get_table_names():
+            session = db.connection.get_session()
+            session.execute(text("DROP TABLE IF EXISTS song"))
+            session.commit()
+            session.close()
+        
+        # Create song table with explicit data types
+        metadata = MetaData()
+        song_table = Table(
+            'song', metadata,
+            Column('name', String),
+            Column('song_id', String),
+            Column('artist_id', String)
+        )
+        metadata.create_all(engine)
         
         # Process in batches
         for i in range(0, len(spotify_ids), batch_size):
@@ -109,7 +127,14 @@ def fetch_artist_songs_batch(batch_size=50, max_workers=10):
             if batch_songs:
                 print(f"Saving batch of {len(batch_songs)} songs to database")
                 df = pd.DataFrame(batch_songs)
-                df.to_sql('song', engine, if_exists='append', index=False)
+                
+                # Use to_sql with dtype parameter to specify column types
+                df.to_sql('song', engine, if_exists='append', index=False,
+                          dtype={
+                              'name': String,
+                              'song_id': String,
+                              'artist_id': String
+                          })
             
             # Wait a bit between batches to avoid overwhelming the server
             time.sleep(1)
@@ -176,7 +201,7 @@ def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end
 
 
 # example usages
-fetch_kworb_charts('apple', 'csv') # saves yesterday's apple music charts to a local csv file
+#fetch_kworb_charts('apple', 'csv') # saves yesterday's apple music charts to a local csv file
 #fetch_kworb_charts('itunes', 'sql', start=datetime(year=2025, month=3, day=1)) # saves itunes charts from 2025/03/01 to today in the db
-#fetch_artists()
-#fetch_artists_songs_batch()
+fetch_artists()
+fetch_artists_songs_batch()
