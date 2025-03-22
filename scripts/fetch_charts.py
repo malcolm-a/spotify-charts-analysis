@@ -2,6 +2,8 @@ from bs4 import BeautifulSoup
 from datetime import date, datetime, timedelta
 from dateutil.rrule import rrule, DAILY
 import db.connection
+from db.models import Artist, Song, artist_song
+from db.schema import ensure_schema_exists, drop_and_create_schema
 from io import StringIO
 import pandas as pd
 from pathlib import Path
@@ -18,6 +20,9 @@ urllib3.disable_warnings()
 
 
 def fetch_artists():
+    # Ensure schema exists before fetching
+    ensure_schema_exists()
+    
     url = 'http://www.kworb.net/spotify/artists.html'
     try:
         response = requests.get(url, verify=False)
@@ -32,14 +37,24 @@ def fetch_artists():
             spotify_id_match = re.search(r'/spotify/artist/([^_]+)_', link.get('href'))
             spotify_id = spotify_id_match.group(1) if spotify_id_match else None
             
-            artists_data.append({
-                'name': artist_name,
-                'spotify_id': spotify_id
-            })
-        engine = db.connection.get_engine()
+            if spotify_id:
+                artists_data.append({
+                    'name': artist_name,
+                    'spotify_id': spotify_id
+                })
+            
+        # Use ORM to add artists
+        session = db.connection.get_session()
+        for artist_data in artists_data:
+            artist = Artist(
+                spotify_id=artist_data['spotify_id'],
+                name=artist_data['name']
+            )
+            session.merge(artist)  # Use merge instead of add to handle duplicates
         
-        pd.DataFrame(artists_data).to_sql('artist', engine, if_exists='replace', index=False)
-        print("Fetched artists in the database")
+        session.commit()
+        session.close()
+        print(f"Fetched {len(artists_data)} artists in the database")
     
     except Exception as e:
         print(f"Error fetching artists: {e}")
@@ -62,46 +77,31 @@ def fetch_artist_songs(artist_id):
             spotify_id_match = re.search(r'/track/([^_]+)', href)
             spotify_id = spotify_id_match.group(1) if spotify_id_match else None
         
-            songs.append({
-                'name': song_name,
-                'song_id': spotify_id,
-                'artist_id': artist_id
-            })
+            if spotify_id:
+                songs.append({
+                    'name': song_name,
+                    'song_id': spotify_id
+                })
         
-        return songs
+        return songs, artist_id
     except Exception as e:
         print(f"Error fetching songs for artist {artist_id}: {e}")
-        return []  # Return empty list on error
+        return [], artist_id  # Return empty list on error
+
 
 def fetch_artists_songs_batch(batch_size=50, max_workers=10):
     """Fetch songs for all artists in batches with concurrent requests"""
     try:
+        # Do NOT drop schema here, just ensure it exists
+        ensure_schema_exists()
+        
         # Get all artist IDs from database
         session = db.connection.get_session()
-        result = session.execute(text("SELECT spotify_id FROM artist"))
-        spotify_ids = [row[0] for row in result]
+        artists = session.query(Artist).all()
+        spotify_ids = [artist.spotify_id for artist in artists]
         session.close()
         
         print(f"Found {len(spotify_ids)} artists to process")
-        engine = db.connection.get_engine()
-        
-        # Drop song table if it exists and create it with correct schema and data types
-        inspector = inspect(engine)
-        if 'song' in inspector.get_table_names():
-            session = db.connection.get_session()
-            session.execute(text("DROP TABLE IF EXISTS song"))
-            session.commit()
-            session.close()
-        
-        # Create song table with explicit data types
-        metadata = MetaData()
-        song_table = Table(
-            'song', metadata,
-            Column('name', String),
-            Column('song_id', String),
-            Column('artist_id', String)
-        )
-        metadata.create_all(engine)
         
         # Process in batches
         for i in range(0, len(spotify_ids), batch_size):
@@ -114,27 +114,50 @@ def fetch_artists_songs_batch(batch_size=50, max_workers=10):
                 future_to_artist = {executor.submit(fetch_artist_songs, artist_id): artist_id for artist_id in batch}
                 
                 # Process results as they complete
-                batch_songs = []
                 for future in tqdm(concurrent.futures.as_completed(future_to_artist), total=len(batch), desc="Artists"):
                     artist_id = future_to_artist[future]
                     try:
-                        songs = future.result()
-                        batch_songs.extend(songs)
+                        songs, artist_id = future.result()
+                        
+                        # Process each batch of songs and add to database
+                        if songs:
+                            session = db.connection.get_session()
+                            
+                            # Get or create the artist
+                            artist = session.query(Artist).filter_by(spotify_id=artist_id).first()
+                            if not artist:
+                                continue  # Skip if artist doesn't exist
+                                
+                            # Add songs and relationships
+                            for song_data in songs:
+                                # Add song if not exists
+                                song = session.query(Song).filter_by(song_id=song_data['song_id']).first()
+                                if not song:
+                                    song = Song(
+                                        song_id=song_data['song_id'],
+                                        name=song_data['name']
+                                    )
+                                    session.add(song)
+                                
+                                # Add relationship if not exists
+                                relationship_exists = session.query(artist_song).filter_by(
+                                    artist_id=artist_id,
+                                    song_id=song_data['song_id']
+                                ).count() > 0
+                                
+                                if not relationship_exists:
+                                    session.execute(
+                                        artist_song.insert().values(
+                                            artist_id=artist_id,
+                                            song_id=song_data['song_id']
+                                        )
+                                    )
+                                    
+                            session.commit()
+                            session.close()
+                            
                     except Exception as e:
                         print(f"Artist {artist_id} generated an exception: {e}")
-            
-            # Save this batch to the database
-            if batch_songs:
-                print(f"Saving batch of {len(batch_songs)} songs to database")
-                df = pd.DataFrame(batch_songs)
-                
-                # Use to_sql with dtype parameter to specify column types
-                df.to_sql('song', engine, if_exists='append', index=False,
-                          dtype={
-                              'name': String,
-                              'song_id': String,
-                              'artist_id': String
-                          })
             
             # Wait a bit between batches to avoid overwhelming the server
             time.sleep(1)
@@ -200,8 +223,11 @@ def fetch_kworb_charts(source: str, target: str = 'sql', start: date = None, end
             save_data(dt, html_tables)
 
 
-# example usages
-#fetch_kworb_charts('apple', 'csv') # saves yesterday's apple music charts to a local csv file
-#fetch_kworb_charts('itunes', 'sql', start=datetime(year=2025, month=3, day=1)) # saves itunes charts from 2025/03/01 to today in the db
-fetch_artists()
-fetch_artists_songs_batch()
+# Main execution
+if __name__ == "__main__":
+    # Only drop and recreate schema if explicitly requested
+    # drop_and_create_schema()  # Uncomment if you want to reset database
+    
+    # Fetch artists first, then songs
+    fetch_artists()
+    fetch_artists_songs_batch()
