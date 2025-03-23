@@ -86,7 +86,7 @@ def fetch_spotify_tracks_batch(ids: list):
                         {"track_data": track_json, "track_id": track['id']}
                     )
             session.commit()
-            print(f"Updated {len(results)} tracks in the database")
+            print(f"Updated {len(results)} tracks in the database", end=" ")
         except Exception as e:
             session.rollback()
             print(f"Database error when updating tracks: {e}")
@@ -104,6 +104,7 @@ def fetch_all_spotify_tracks(batch_size=500):
     Args:
         batch_size (int): Number of songs to process in each batch
     """
+    start = time.time()
     session = get_session()
     try:
         # Songs with a null sp_track field
@@ -113,19 +114,48 @@ def fetch_all_spotify_tracks(batch_size=500):
         song_ids = [row[0] for row in result]
         session.close()
         
-        print(f"Found {len(song_ids)} songs without Spotify track data")
+        total_songs = len(song_ids)
+        print(f"Found {total_songs} songs without Spotify track data")
         
-        for i in range(0, len(song_ids), batch_size):
+        total_batches = (total_songs + batch_size - 1) // batch_size
+        songs_processed = 0
+        
+        # Songs batch processing
+        for i in range(0, total_songs, batch_size):
+            batch_start = time.time()
             batch = song_ids[i:i+batch_size]
-            print(f"Processing batch {i//batch_size + 1}/{(len(song_ids) + batch_size - 1)//batch_size}")
+            songs_processed += len(batch)
+            
+            batch_num = i // batch_size + 1
+            print(f"Processing batch {batch_num}/{total_batches} ({len(batch)} songs)")
+            
+            # Fetch Spotify track data for the current batch
             fetch_spotify_tracks_batch(batch)
-            # Delay to respect API rate limits
+            
+            # Time data for the current batch
+            batch_elapsed = time.time() - batch_start
+            songs_per_second = len(batch) / batch_elapsed if batch_elapsed > 0 else 0
+            print(f"in {batch_elapsed:.2f}s ({songs_per_second:.2f} songs/sec)")
+            print(f"Progress: {songs_processed}/{total_songs} songs ({songs_processed/total_songs*100:.1f}%)")
+            
+            # Estimated time remaining based on overall progress
+            elapsed = time.time() - start
+            songs_remaining = total_songs - songs_processed
+            eta = songs_remaining / songs_processed / elapsed
+            print(f"ETA: {print_time(eta)}\n")
+            
             time.sleep(1)
         
-        print("Completed fetching all Spotify tracks")
+        # Final summary
+        elapsed = time.time() - start
+        hours, minutes, seconds = seconds_to_hms(elapsed)
+        
+        print(f"Completed fetching all Spotify tracks in {hours:02}:{minutes:02}:{seconds:02}")
+        print(f"Average processing speed: {total_songs/elapsed:.2f} songs/second")
     
     except Exception as e:
-        print(f"Error in fetch_all_spotify_tracks: {e}")
+        elapsed = time.time() - start
+        print(f"Error in fetch_all_spotify_tracks after {elapsed:.2f} seconds: {e}")
         if session:
             session.close()
 
