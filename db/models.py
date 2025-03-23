@@ -1,6 +1,6 @@
-from sqlalchemy import Column, String, ForeignKey, Table, MetaData
+from sqlalchemy import Column, String, ForeignKey, Table, MetaData, JSON
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.schema import UniqueConstraint  # Add this import
+from sqlalchemy.schema import UniqueConstraint
 
 Base = declarative_base()
 metadata = MetaData()

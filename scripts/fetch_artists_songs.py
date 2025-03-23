@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import insert
 urllib3.disable_warnings()
 
 
-def fetch_artists():
+def fetch_artists(url="http://www.kworb.net/spotify/artists.html"):
     """Fetch all artists and bulk insert them into the database.
     
     Returns:
@@ -23,7 +23,6 @@ def fetch_artists():
 
     ensure_schema_exists()
 
-    url = "http://www.kworb.net/spotify/artists.html"
     try:
         response = requests.get(url, verify=False)
         response.encoding = "utf-8"
@@ -35,8 +34,8 @@ def fetch_artists():
         artists_data = []
         for link in artist_links:
             artist_name = link.text.strip()
-
-            spotify_id_match = re.search(r"/spotify/artist/([^_]+)_", link.get("href"))
+            href = link.get("href").lstrip("/spotify")
+            spotify_id_match = re.search(r"artist/([^_]+)_", href)
             spotify_id = spotify_id_match.group(1) if spotify_id_match else None
 
             if spotify_id:
@@ -202,4 +201,5 @@ def fetch_artists_songs_batch(batch_size=50, max_workers=10):
 if __name__ == "__main__":
     # drop_and_create_schema()  # RESETS THE DATABASE
     fetch_artists()
+    fetch_artists("https://kworb.net/spotify/listeners.html")
     fetch_artists_songs_batch()
