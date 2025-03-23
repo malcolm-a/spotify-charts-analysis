@@ -29,7 +29,6 @@ class Song(Base):
     
     song_id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
-    features = Column(JSON, nullable=True)  
     
     __table_args__ = (UniqueConstraint('song_id', name='uq_song_id'),)
     
