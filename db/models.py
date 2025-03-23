@@ -1,6 +1,6 @@
-from sqlalchemy import Column, String, ForeignKey, Table, MetaData
+from sqlalchemy import Column, String, ForeignKey, Table, MetaData, JSON
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.schema import UniqueConstraint  # Add this import
+from sqlalchemy.schema import UniqueConstraint
 
 Base = declarative_base()
 metadata = MetaData()
@@ -29,6 +29,7 @@ class Song(Base):
     
     song_id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
+    features = Column(JSON, nullable=True)  
     
     __table_args__ = (UniqueConstraint('song_id', name='uq_song_id'),)
     
