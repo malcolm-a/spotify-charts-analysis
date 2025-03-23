@@ -6,15 +6,48 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import sqlalchemy as sa
 
+def seconds_to_hms(seconds):
+    """Convert seconds to hours, minutes, and seconds
+    
+    Args:
+        seconds (int): Number of seconds to convert
+    
+    Returns:
+        tuple: A tuple containing hours, minutes, and seconds
+    """
+    seconds = int(seconds)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    return hours, minutes, seconds
+
+def print_time(seconds):
+    """Print time in a human-readable format
+    
+    Args:
+        seconds (int): number of seconds to convert
+    
+    Returns:
+        str: formatted time string  
+    """
+    hours, minutes, seconds = seconds_to_hms(seconds)
+    
+    if hours > 0:
+        return f"{hours}h {minutes}m {seconds}s"
+    elif minutes > 0:
+        return f"{minutes}m {seconds}s"
+    else:
+        return f"{seconds}s"
+
 def fetch_spotify_tracks_batch(ids: list):
     """
     Fetches track details from Spotify's API using a list of track IDs
 
     Args:
-        ids (list): List of track IDs to fetch from Spotify.
+        ids (list): list of track IDs to fetch from Spotify.
 
     Returns:
-        list: List of track details fetched from Spotify.
+        list: list of track details fetched from Spotify.
     """
 
     credentials = SpotifyClientCredentials(
