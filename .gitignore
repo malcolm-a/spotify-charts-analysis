@@ -4,3 +4,5 @@ data
 .DS_Store
 network.py
 .env
+.cache
+*.pyc
