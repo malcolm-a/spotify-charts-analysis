@@ -62,6 +62,7 @@ def fetch_spotify_tracks_batch(ids: list):
     for i in range(0, len(ids), 50):
         batch_ids = ids[i:i+50]
         try:
+            time.sleep(1)
             batch_results = sp.tracks(batch_ids)
             if 'tracks' in batch_results:
                 results.extend(batch_results['tracks'])
@@ -160,4 +161,4 @@ def fetch_all_spotify_tracks(batch_size=500):
             session.close()
 
 if __name__ == "__main__":
-    fetch_all_spotify_tracks()
+    fetch_all_spotify_tracks(batch_size=50)
