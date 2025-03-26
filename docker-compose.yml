@@ -1,10 +1,7 @@
-# Use postgres/example user/password credentials
-version: '3.9'
-
 services:
 
   db:
-    image: postgres
+    image: postgres:17.4
     restart: always
     # set shared memory limit when using docker-compose
     shm_size: 128mb
@@ -15,6 +12,7 @@ services:
     #    tmpfs:
     #      size: 134217728 # 128*2^20 bytes = 128Mb
     environment:
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5433:5432"
