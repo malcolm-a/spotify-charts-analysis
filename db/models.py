@@ -1,16 +1,18 @@
-from sqlalchemy import Column, String, ForeignKey, Table, MetaData, JSON
+from sqlalchemy import Column, PrimaryKeyConstraint, String, Integer, ForeignKey, Table, Date, BigInteger
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship
 from sqlalchemy.schema import UniqueConstraint
 
-Base = declarative_base()
-metadata = MetaData()
 
+Base = declarative_base()
+
+# Association table for many-to-many relationship
 artist_song = Table(
-    'artist_song', 
+    'artist_song',
     Base.metadata,
-    Column('artist_id', String, ForeignKey('artist.spotify_id'), primary_key=True),
-    Column('song_id', String, ForeignKey('song.song_id'), primary_key=True),
-    UniqueConstraint('artist_id', 'song_id', name='uq_artist_song')
+    Column('artist_id', String, ForeignKey('artist.spotify_id'), nullable=False),
+    Column('song_id', String, ForeignKey('song.song_id'), nullable=False),
 )
 
 class Artist(Base):
@@ -18,19 +20,71 @@ class Artist(Base):
     
     spotify_id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
+    sp_artist = Column(JSONB, nullable=True)
+    mbid = Column(String, nullable=True)
     
-    __table_args__ = (UniqueConstraint('spotify_id', name='uq_artist_id'),)
+    songs = relationship('Song', secondary=artist_song, back_populates='artists')
     
     def __repr__(self):
-        return f"<Artist(name='{self.name}', spotify_id='{self.spotify_id}')>"
+        return f"<Artist(spotify_id='{self.spotify_id}', name='{self.name}')>"
 
 class Song(Base):
     __tablename__ = 'song'
     
     song_id = Column(String, primary_key=True)
     name = Column(String, nullable=False)
+    sp_track = Column(JSONB, nullable=True)
+    features = Column(JSONB, nullable=True)
+    mbid = Column(String, nullable=True)
     
-    __table_args__ = (UniqueConstraint('song_id', name='uq_song_id'),)
+    artists = relationship('Artist', secondary=artist_song, back_populates='songs')
     
     def __repr__(self):
-        return f"<Song(name='{self.name}', song_id='{self.song_id}')>"
+        return f"<Song(song_id='{self.song_id}', name='{self.name}')>"
+    
+class Artist_stats(Base):
+    __tablename__ = "artist_stats"
+
+    artist_id = Column(String, ForeignKey('artist.spotify_id'), nullable=False)
+    artist_name = Column(String, nullable=False)
+    date = Column(Date, nullable=False)
+    total_streams = Column(BigInteger)
+    daily_streams = Column(Integer)
+    listeners = Column(Integer)
+    
+    
+
+    __table_args__ = (
+        UniqueConstraint('artist_id', 'date', name='uq_artists_stats'),
+        PrimaryKeyConstraint('artist_id', 'date'),
+    )
+
+    def __repr__(self):
+        return f"<ArtistStats(artist='{self.artist_name}', date='{self.date}', streams='{self.total_streams}')>"
+    
+class Country(Base):
+    __tablename__ = 'country'
+    
+    country_code = Column(String, primary_key=True)
+    country_name = Column(String, nullable=False)
+    region = Column(String, nullable=True)
+    
+    def __repr__(self):
+        return f"<Country(country_code='{self.country_code}', country_name='{self.country_name}')>"
+    
+class Artist_charts(Base):
+    __tablename__ = 'artist_charts'
+    
+    artist_id = Column(String, ForeignKey('artist.spotify_id'), nullable=False)
+    country_code = Column(String, ForeignKey('country.country_code'), nullable=False)
+    date = Column(Date, nullable=False)
+    rank = Column(Integer, nullable=False)
+    
+    __table_args__ = (
+        UniqueConstraint('artist_id', 'country_code', 'date', name='uq_artist_charts'),
+        PrimaryKeyConstraint('artist_id', 'country_code', 'date'),
+    )
+
+    def __repr__(self):
+        return f"<ArtistCharts(artist='{self.artist_id}', country='{self.country_code}', date='{self.date}', rank='{self.rank}')>"
+    
