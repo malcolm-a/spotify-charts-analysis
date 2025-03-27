@@ -21,23 +21,6 @@ def seconds_to_hms(seconds):
     
     return hours, minutes, seconds
 
-def print_time(seconds):
-    """Print time in a human-readable format
-    
-    Args:
-        seconds (int): number of seconds to convert
-    
-    Returns:
-        str: formatted time string  
-    """
-    hours, minutes, seconds = seconds_to_hms(seconds)
-    
-    if hours > 0:
-        return f"{hours}h {minutes}m {seconds}s"
-    elif minutes > 0:
-        return f"{minutes}m {seconds}s"
-    else:
-        return f"{seconds}s"
 
 def fetch_spotify_tracks_batch(ids: list):
     """
@@ -138,12 +121,6 @@ def fetch_all_spotify_tracks(batch_size=500):
             songs_per_second = len(batch) / batch_elapsed if batch_elapsed > 0 else 0
             print(f"in {batch_elapsed:.2f}s ({songs_per_second:.2f} songs/sec)")
             print(f"Progress: {songs_processed}/{total_songs} songs ({songs_processed/total_songs*100:.1f}%)")
-            
-            # Estimated time remaining based on overall progress
-            elapsed = time.time() - start
-            songs_remaining = total_songs - songs_processed
-            eta = songs_remaining / songs_processed / elapsed
-            print(f"ETA: {print_time(eta)}\n")
             
             time.sleep(1)
         
