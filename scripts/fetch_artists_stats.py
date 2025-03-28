@@ -12,6 +12,19 @@ from sqlalchemy.dialects.postgresql import insert
 from datetime import datetime
 import pandas as pd
 from io import StringIO
+import schedule
+import logging
+import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('artist_stats.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 urllib3.disable_warnings()
 
@@ -24,8 +37,7 @@ def fetch_artist_stats(artist_id):
     try:
         with requests.get(f'https://www.kworb.net/spotify/artist/{artist_id}_songs.html', verify=False) as response:
             html_tables = pd.read_html(StringIO(response.text), encoding='utf-8', extract_links='all', header=0)[0].to_dict()
-            
-
+        
         streams_total = html_tables[('Total', None)][0][0]
         daily_total = html_tables[('Total', None)][1][0] 
 
@@ -35,7 +47,7 @@ def fetch_artist_stats(artist_id):
         }
     
     except Exception as e:
-        print(f"Erreur pour fecth les stats de l'artiste {artist_id}: {e}")
+        logger.error(f"Erreur lors de la récupération des stats pour l'artiste {artist_id}: {str(e)}")
         return None
 
 def fetch_listeners():
@@ -64,19 +76,19 @@ def fetch_listeners():
         return listeners_data
 
     except Exception as e:
-        print(f"Erreur pour fetch listeners: {e}")
+        logger.error(f"Erreur lors de la récupération des listeners: {str(e)}")
         return []
 
-
 def fetch_artists_stats_batch(batch_size=50, max_workers=5):
-    """Fetch artist statistics in batches with concurrent requests."""
+    logger.info("Début de la collecte des statistiques")
+    start_time = time.time()
+    
     ensure_schema_exists()
     session = db.connection.get_session()
     
     try:
         artists = session.query(Artist).all()
         artist_ids = [artist.spotify_id for artist in artists]
-        
         stats_to_insert = []
         listeners_data = fetch_listeners()
         listeners_map = {item['artist_name']: item['listeners'] for item in listeners_data}
@@ -107,7 +119,7 @@ def fetch_artists_stats_batch(batch_size=50, max_workers=5):
                                     'date': datetime.now().date()
                                 })
                     except Exception as e:
-                        print(f"Error processing artist {artist_id}: {e}")
+                        logger.error(f"Erreur lors du traitement de l'artiste {artist_id}: {str(e)}")
             
             if stats_to_insert:
                 stmt = insert(Artist_stats).values(stats_to_insert)
@@ -122,13 +134,31 @@ def fetch_artists_stats_batch(batch_size=50, max_workers=5):
                 session.execute(stmt)
                 session.commit()
                 stats_to_insert = []
-            
+                
+        logger.info(f"Collecte terminée avec succès. Durée: {time.time() - start_time:.2f} secondes")
             
     except Exception as e:
         session.rollback()
-        print(f"Error in fetch_artists_stats_batch: {e}")
+        logger.error(f"Erreur dans fetch_artists_stats_batch: {str(e)}", exc_info=True)
     finally:
         session.close()
 
-if __name__ == "__main__":
+def run_scheduler():
     fetch_artists_stats_batch()
+    
+    schedule.every(24).hours.do(fetch_artists_stats_batch)
+    
+    logger.info("Planificateur démarré. Prochaine exécution programmée toutes les 24 heures.")
+    
+    while True:
+        try:
+            schedule.run_pending()
+            time.sleep(60)
+        except KeyboardInterrupt:
+            logger.info("Arrêt manuel du planificateur")
+            break
+        except Exception as e:
+            logger.error(f"Erreur dans le planificateur: {str(e)}", exc_info=True)
+            time.sleep(300)
+if __name__ == "__main__":
+    run_scheduler()
