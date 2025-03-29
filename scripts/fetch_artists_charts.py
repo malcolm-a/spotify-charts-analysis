@@ -15,12 +15,12 @@ LASTFM_API_SECRET = os.getenv("LASTFM_API_SECRET")
 LASTFM_USERNAME = os.getenv("LASTFM_USERNAME")
 LASTFM_PASSWORD = pylast.md5(os.getenv("LASTFM_PASSWORD"))
 
-# fetch MBID from MusicBrainz API
-def fetch_mbid(artist):
+def fetch_mbid(artist, retries=3):
     """
     Fetches the MBID for a given artist from the MusicBrainz API.
-    :param artist: An Artist object from the database.
-    :return: A tuple of (artist.spotify_id, mbid) if successful, otherwise None
+    Returns a tuple (artist.spotify_id, mbid) on success,
+    ("404") if not found, or None if not retrievable.
+    Retries when a 503 error is encountered.
     """
     url = f"https://musicbrainz.org/ws/2/url?resource=https://open.spotify.com/artist/{artist.spotify_id}&fmt=json&inc=artist-rels"
     headers = {
@@ -28,9 +28,22 @@ def fetch_mbid(artist):
     }
     
     try:
-        print(f"fetching MBID for artist {artist.spotify_id}")
-        # timeout to prevent hanging indefinitely
+        print(f"Fetching MBID for artist {artist.spotify_id}")
         response = requests.get(url, headers=headers, timeout=10, verify=False)
+        
+        if response.status_code == 404:
+            print(f"404 error for {artist.spotify_id}")
+            return artist.spotify_id, "404"
+        
+        if response.status_code == 503:
+            if retries > 0:
+                print(f"503 error for {artist.spotify_id}, retrying ({retries} left)...")
+                time.sleep(5)
+                return fetch_mbid(artist, retries - 1)
+            else:
+                print(f"503 error for {artist.spotify_id} after retries")
+                return None
+        
         response.raise_for_status()
         data = response.json()
         
@@ -45,16 +58,46 @@ def fetch_mbid(artist):
                 
         print(f"No artist relation found for {artist.spotify_id}")
         return None
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            print(f"404 error for {artist.spotify_id}")
+            return artist.spotify_id, "404"
+        print(f"HTTP error for {artist.spotify_id}: {e}")
+        return None
     except Exception as e:
-        print(e)
+        print(f"Error for {artist.spotify_id}: {e}")
         return None
 
 
-def update_artist_mbids():
+def update_artist_mbids(skip_404=True):
     """
     Fetches and updates the MBIDs for all artists in the database where MBID is NULL.
+
+    Args:
+        skip_404 (bool): if True, skips artists that returned a 404 error on previous try
     """
     session = get_session()
+    
+    # Ensure data directory exists
+    os.makedirs("db/data", exist_ok=True)
+    
+    # Load problematic artists or initialize with default permanent problematic artist
+    error_file = "db/data/artist_errors.json"
+    try:
+        with open(error_file, "r") as f:
+            problematic_artists = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        problematic_artists = {
+            "2qk9voo8llSGYcZ6xrBzKx": {
+                "error_type": "other",
+                "error_message": "Permanently problematic artist",
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+        with open(error_file, "w") as f:
+            json.dump(problematic_artists, f, indent=2)
+    
+    artists_404 = {art_id for art_id, data in problematic_artists.items() if data.get("error_type") == "404"}
     
     artists = session.query(Artist).filter(Artist.mbid.is_(None)).all()
     if not artists:
@@ -65,36 +108,73 @@ def update_artist_mbids():
     print(f"Found {artists_count} artists with missing MBIDs. Updating...")
 
     updated_count = 0
-    problematic_artists = ["2qk9voo8llSGYcZ6xrBzKx"]
+    new_problematic = {}
     
+    # Preserve permanent problematic artists
+    for art_id, data in problematic_artists.items():
+        if data.get("error_type") == "other":
+            new_problematic[art_id] = data
+
     for artist in artists:
+        # skip permanently problematic artists
+        if artist.spotify_id in problematic_artists and problematic_artists[artist.spotify_id].get("error_type") == "other":
+            print(f"Skipping permanently problematic artist {artist.spotify_id}")
+            continue
+            
+        # skip 404 artists if skip_404 is True
+        if skip_404 and artist.spotify_id in artists_404:
+            print(f"Skipping 404 artist {artist.spotify_id}")
+            new_problematic[artist.spotify_id] = problematic_artists[artist.spotify_id]
+            continue
+                
         try:
-            if artist.spotify_id in problematic_artists:
-                print(f"Skipping problematic artist {artist.spotify_id}")
+            result = fetch_mbid(artist)
+            if not result:
+                new_problematic[artist.spotify_id] = {
+                    "error_type": "other",
+                    "error_message": "No relation found or server error",
+                    "timestamp": datetime.now().isoformat()
+                }
                 continue
                 
-            result = fetch_mbid(artist)
-            if result:
-                _, mbid = result
-                artist.mbid = mbid
-                session.commit()
-                updated_count += 1
-                print(f"Updated {round(updated_count/artists_count*100, 2)}% of artists with MBIDs.")
-            else:
-                problematic_artists.append(artist.spotify_id)
-        except Exception as e:
-            print(f"Error processing artist {artist.spotify_id}: {e}")
-            problematic_artists.append(artist.spotify_id)
-        time.sleep(1)
+            spotify_id, mbid = result
             
+            if mbid == "404":
+                new_problematic[spotify_id] = {
+                    "error_type": "404",
+                    "error_message": "Artist not found in MusicBrainz",
+                    "timestamp": datetime.now().isoformat()
+                }
+                continue
+   
+            artist.mbid = mbid
+            session.commit()
+            updated_count += 1
+            print(f"Updated {updated_count}/{artists_count} artists ({round(updated_count/artists_count*100, 2)}%).")
+            
+        except Exception as e:
+            new_problematic[artist.spotify_id] = {
+                "error_type": "other",
+                "error_message": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+
+        time.sleep(1)
+    
+    # update problematic artists file
+    with open(error_file, "w") as f:
+        json.dump(new_problematic, f, indent=2)
+    recovered = sum(1 for art_id in problematic_artists if art_id not in new_problematic)
+    
     session.close()
-    print(f"Updated MBIDs for {updated_count} artists.")
-    print(f"Could not update {len(problematic_artists)} artists:")
-    print(", ".join(problematic_artists[:10]))
+    print(f"\nFinal results:")
+    print(f"- Updated MBIDs for {updated_count} artists")
+    print(f"- Recovered {recovered} previously problematic artists!")
+
 
 def insert_countries():
     """
-    Inserts countries into the database from a CSV file
+    Inserts countries into the database from a CSV file.
     """
     session = get_session()
     countries = pd.read_csv("db/data/countries.csv")[["name", "alpha-2", "region"]]
@@ -110,13 +190,12 @@ def insert_countries():
     session.close()
     print("\nSuccessfully inserted countries")
     
+    
 def fetch_artists_charts():
     """
-    Fetches artists charts per country from last.fm's api
+    Fetches artists charts per country from last.fm's API.
     """
-    
     session = get_session()
-    
     countries = session.query(Country).all()
     
     for country in countries:
