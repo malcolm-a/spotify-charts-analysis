@@ -46,7 +46,6 @@ class Artist_stats(Base):
     __tablename__ = "artist_stats"
 
     artist_id = Column(String, ForeignKey('artist.spotify_id'), nullable=False)
-    artist_name = Column(String, nullable=False)
     date = Column(Date, nullable=False)
     total_streams = Column(BigInteger)
     daily_streams = Column(Integer)

@@ -39,7 +39,6 @@ def upgrade() -> None:
     )
     op.create_table('artist_stats',
     sa.Column('artist_id', sa.String(), nullable=False),
-    sa.Column('artist_name', sa.String(), nullable=False),
     sa.Column('date', sa.Date(), nullable=False),
     sa.Column('total_streams', sa.BigInteger(), nullable=True),
     sa.Column('daily_streams', sa.Integer(), nullable=True),
