@@ -15,25 +15,38 @@ LASTFM_API_SECRET = os.getenv("LASTFM_API_SECRET")
 LASTFM_USERNAME = os.getenv("LASTFM_USERNAME")
 LASTFM_PASSWORD = pylast.md5(os.getenv("LASTFM_PASSWORD"))
 
-# fetch MBID from MusicBrainz API ----- apparently fetches the wrong mbid (resource instead of artist) -> needs fixing
+# fetch MBID from MusicBrainz API
 def fetch_mbid(artist):
     """
     Fetches the MBID for a given artist from the MusicBrainz API.
     :param artist: An Artist object from the database.
-    :return: A tuple of (artist.spotify_id, mbid) if successful, otherwise None.
+    :return: A tuple of (artist.spotify_id, mbid) if successful, otherwise None
     """
-    url = f"https://musicbrainz.org/ws/2/url?resource=https://open.spotify.com/artist/{artist.spotify_id}&fmt=json"
+    url = f"https://musicbrainz.org/ws/2/url?resource=https://open.spotify.com/artist/{artist.spotify_id}&fmt=json&inc=artist-rels"
     headers = {
-        "User-Agent": "SAEDataVis/1.0 (mailto:your_email@example.com)"
+        "User-Agent": "SAEDataVis/1.0 (mailto:malcolm.aridory@etudiant.univ-reims.fr)"
     }
+    
     try:
-        response = requests.get(url, headers=headers)
+        print(f"fetching MBID for artist {artist.spotify_id}")
+        # timeout to prevent hanging indefinitely
+        response = requests.get(url, headers=headers, timeout=10, verify=False)
         response.raise_for_status()
         data = response.json()
-        mbid = data.get("id")
-        return artist.spotify_id, mbid
+        
+        if not data.get("relations"):
+            print(f"No relations found for {artist.spotify_id}")
+            return None
+            
+        for relation in data.get("relations", []):
+            if "artist" in relation and "id" in relation["artist"]:
+                artist_mbid = relation["artist"]["id"]
+                return artist.spotify_id, artist_mbid
+                
+        print(f"No artist relation found for {artist.spotify_id}")
+        return None
     except Exception as e:
-        print(f"Error fetching MBID for artist {artist.spotify_id}: {e}")
+        print(e)
         return None
 
 
@@ -52,18 +65,32 @@ def update_artist_mbids():
     print(f"Found {artists_count} artists with missing MBIDs. Updating...")
 
     updated_count = 0
+    problematic_artists = ["2qk9voo8llSGYcZ6xrBzKx"]
+    
     for artist in artists:
-        result = fetch_mbid(artist)
-        if result:
-            _, mbid = result
-            artist.mbid = mbid
-            session.commit()
-            updated_count += 1
-            print(f"Updated {round(updated_count/artists_count*100, 2)}% of artists with MBIDs.")
+        try:
+            if artist.spotify_id in problematic_artists:
+                print(f"Skipping problematic artist {artist.spotify_id}")
+                continue
+                
+            result = fetch_mbid(artist)
+            if result:
+                _, mbid = result
+                artist.mbid = mbid
+                session.commit()
+                updated_count += 1
+                print(f"Updated {round(updated_count/artists_count*100, 2)}% of artists with MBIDs.")
+            else:
+                problematic_artists.append(artist.spotify_id)
+        except Exception as e:
+            print(f"Error processing artist {artist.spotify_id}: {e}")
+            problematic_artists.append(artist.spotify_id)
         time.sleep(1)
             
     session.close()
     print(f"Updated MBIDs for {updated_count} artists.")
+    print(f"Could not update {len(problematic_artists)} artists:")
+    print(", ".join(problematic_artists[:10]))
 
 def insert_countries():
     """
@@ -116,6 +143,6 @@ def fetch_artists_charts():
     session.close()
     
 if __name__ == "__main__":
-    #update_artist_mbids()
+    update_artist_mbids()
     #insert_countries()
-    fetch_artists_charts()
+    #fetch_artists_charts()
