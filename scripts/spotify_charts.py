@@ -86,7 +86,7 @@ def fetch_country_charts(country_code: str) -> dict:
             
         response.encoding = "utf-8"
         soup = BeautifulSoup(response.text, "html.parser")
-        chart_date = datetime.now().date()
+        chart_date = (datetime.now().date() - datetime.timedelta(days=2))
         
         # find date if available in the page
         date_text = soup.select_one("h1")
