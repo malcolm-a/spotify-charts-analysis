@@ -9,7 +9,7 @@ import concurrent.futures
 import time
 from tqdm import tqdm
 from sqlalchemy.dialects.postgresql import insert
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 from io import StringIO
 import schedule
@@ -69,6 +69,16 @@ def fetch_listeners(base_url="https://kworb.net/spotify/listeners"):
             rows = soup.select("table.sortable tbody tr")
             logger.info(f"Found {len(rows)} rows in table on {url}")
             
+            stats_date = datetime.now().date() - timedelta(days=1)  # default to yesterday
+            date_text = soup.find(text=lambda t: t and "Last updated:" in t)
+            if date_text:
+                date_match = re.search(r'(\d{4}/\d{2}/\d{2})', date_text)
+                if date_match:
+                    try:
+                        stats_date = datetime.strptime(date_match.group(1), '%Y/%m/%d').date()
+                    except ValueError:
+                        pass
+            
             for row in rows:
                 cols = row.find_all("td")
                 if len(cols) >= 3:
@@ -85,7 +95,7 @@ def fetch_listeners(base_url="https://kworb.net/spotify/listeners"):
                             listeners_data.append({
                                 "spotify_id": spotify_id,
                                 "listeners": listeners,
-                                "date": datetime.now().date()
+                                "date": stats_date
                             })
         return listeners_data
 
