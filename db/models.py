@@ -71,19 +71,23 @@ class Country(Base):
     def __repr__(self):
         return f"<Country(country_code='{self.country_code}', country_name='{self.country_name}')>"
     
-class Artist_charts(Base):
-    __tablename__ = 'artist_charts'
+class Spotify_charts(Base):
+    __tablename__ = 'spotify_charts'
     
-    artist_id = Column(String, ForeignKey('artist.spotify_id'), nullable=False)
-    country_code = Column(String, ForeignKey('country.country_code'), nullable=False)
     date = Column(Date, nullable=False)
+    country_code = Column(String, ForeignKey('country.country_code'), nullable=False)
+    song_id = Column(String, ForeignKey('song.song_id'), nullable=False)
+
+    streams = Column(BigInteger, nullable=False)
+    total_streams = Column(BigInteger, nullable=False)
+    days = Column(Integer, nullable=False)
     rank = Column(Integer, nullable=False)
+
     
     __table_args__ = (
-        UniqueConstraint('artist_id', 'country_code', 'date', name='uq_artist_charts'),
-        PrimaryKeyConstraint('artist_id', 'country_code', 'date'),
+        UniqueConstraint('song_id', 'country_code', 'date', name='uq_spotify_charts'),
+        PrimaryKeyConstraint('song_id', 'country_code', 'date'),
     )
-
+        
     def __repr__(self):
-        return f"<ArtistCharts(artist='{self.artist_id}', country='{self.country_code}', date='{self.date}', rank='{self.rank}')>"
-    
+        return f"<SpotifyCharts(song_id='{self.song_id}', country_code='{self.country_code}', rank='{self.rank}')>"
