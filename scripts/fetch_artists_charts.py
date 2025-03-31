@@ -8,6 +8,7 @@ import os
 import pylast
 import json
 from datetime import datetime
+from sqlalchemy import func
 
 load_dotenv()
 LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
@@ -197,24 +198,41 @@ def fetch_artists_charts():
     """
     session = get_session()
     countries = session.query(Country).all()
+    today = datetime.today().date()
     
     for country in countries:
         print(f"Fetching artists charts for {country.country_name}")
-        top_artists = requests.get(f"http://ws.audioscrobbler.com/2.0/?method=geo.gettopartists&country={country.country_name}&api_key={LASTFM_API_KEY}&format=json&limit=100").json()
+        
+        # Check if we already have data for this country today
+        existing = session.query(Artist_charts).filter(
+            Artist_charts.country_code == country.country_code,
+            func.date(Artist_charts.date) == today
+        ).first()
+        
+        if existing:
+            print(f"Skipping {country.country_name}: already fetched today")
+            continue
+            
+        top_artists = requests.get(f"http://ws.audioscrobbler.com/2.0/?method=geo.gettopartists&country={country.country_name.split(',')[0]}&api_key={LASTFM_API_KEY}&format=json&limit=100").json()
         
         # join artists by mbid and insert into artist_charts
-        for artist in top_artists["topartists"]["artist"]:
-            mbid = artist["mbid"]
-            if mbid:
-                artist_obj = session.query(Artist).filter(Artist.mbid == mbid).first()
-                if artist_obj:
-                    artist_chart = Artist_charts(
-                        artist_id=artist_obj.spotify_id,
-                        country_code=country.country_code,
-                        rank=artist["rank"],
-                        date = datetime.today()
-                    )
-                    session.add(artist_chart)
+        rank = 0
+        added_artists = set()  # Keep track of artists we've already added
+        if top_artists.get("topartists") and top_artists["topartists"].get("artist"):
+            for artist in top_artists["topartists"]["artist"]:
+                rank += 1
+                mbid = artist["mbid"]
+                if mbid:
+                    artist_obj = session.query(Artist).filter(Artist.mbid == mbid).first()
+                    if artist_obj and artist_obj.spotify_id not in added_artists:
+                        artist_chart = Artist_charts(
+                            artist_id=artist_obj.spotify_id,
+                            country_code=country.country_code,
+                            rank=rank,
+                            date=datetime.today()
+                        )
+                        session.add(artist_chart)
+                        added_artists.add(artist_obj.spotify_id)
 
         session.commit()
         time.sleep(1)
@@ -222,6 +240,6 @@ def fetch_artists_charts():
     session.close()
     
 if __name__ == "__main__":
-    update_artist_mbids()
+    #update_artist_mbids()
     #insert_countries()
-    #fetch_artists_charts()
+    fetch_artists_charts()
