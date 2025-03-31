@@ -50,29 +50,43 @@ def fetch_artist_stats(artist_id):
         logger.error(f"Erreur lors de la récupération des stats pour l'artiste {artist_id}: {str(e)}")
         return None
 
-def fetch_listeners():
+def fetch_listeners(base_url="https://kworb.net/spotify/listeners"):
     try:
-        url = "https://kworb.net/spotify/listeners.html"
-        response = requests.get(url, verify=False)
-        response.encoding = "utf-8"
-        soup = BeautifulSoup(response.text, "html.parser")
-
         listeners_data = []
-        rows = soup.select("table.addpos tbody tr")
         
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) >= 2:
-                artist_name = cols[0].text.strip()
-                listeners = parse_number(cols[1].text.replace(",", ""))
+        for page_num in ["", "2", "3", "4"]:
+            url = f"{base_url}{page_num}.html"
+            logger.info(f"Fetching from URL: {url}")
+            
+            response = requests.get(url, verify=False)    
+            if response.status_code != 200:
+                logger.warning(f"Failed to fetch from {url}: {response.status_code}")
+                continue
                 
-                if artist_name and listeners:
-                    listeners_data.append({
-                        "artist_name": artist_name,
-                        "listeners": listeners,
-                        "date": datetime.now().date()
-                    })
-
+            response.encoding = "utf-8"
+            soup = BeautifulSoup(response.text, "html.parser")
+            
+            rows = soup.select("table.sortable tbody tr")
+            logger.info(f"Found {len(rows)} rows in table on {url}")
+            
+            for row in rows:
+                cols = row.find_all("td")
+                if len(cols) >= 3:
+                    artist_link = cols[1].find('a')
+                    if artist_link:
+                        href = artist_link.get('href', '')
+                        spotify_id_match = re.search(r'artist/([^_]+)_songs\.html', href)
+                        spotify_id = spotify_id_match.group(1) if spotify_id_match else None
+                        
+                        listeners_text = cols[2].text.strip()
+                        listeners = parse_number(listeners_text)
+                        
+                        if spotify_id and listeners:
+                            listeners_data.append({
+                                "spotify_id": spotify_id,
+                                "listeners": listeners,
+                                "date": datetime.now().date()
+                            })
         return listeners_data
 
     except Exception as e:
@@ -91,7 +105,7 @@ def fetch_artists_stats_batch(batch_size=50, max_workers=5):
         artist_ids = [artist.spotify_id for artist in artists]
         stats_to_insert = []
         listeners_data = fetch_listeners()
-        listeners_map = {item['artist_name']: item['listeners'] for item in listeners_data}
+        listeners_map = {item['spotify_id']: item['listeners'] for item in listeners_data}
         
         for i in tqdm(range(0, len(artist_ids), batch_size), desc="Processing artists"):
             batch = artist_ids[i:i + batch_size]
@@ -107,17 +121,15 @@ def fetch_artists_stats_batch(batch_size=50, max_workers=5):
                     try:
                         stats = future.result()
                         if stats:
-                            artist = session.query(Artist).filter_by(spotify_id=artist_id).first()
-                            if artist:
-                                listeners = listeners_map.get(artist.name, None)
-                                
-                                stats_to_insert.append({
-                                    'artist_id': artist_id,
-                                    'total_streams': parse_number(stats['total_streams']),
-                                    'daily_streams': parse_number(stats['daily_streams']),
-                                    'listeners': listeners,
-                                    'date': datetime.now().date()
-                                })
+                            listeners = listeners_map.get(artist_id)
+                            
+                            stats_to_insert.append({
+                                'artist_id': artist_id,
+                                'total_streams': parse_number(stats['total_streams']),
+                                'daily_streams': parse_number(stats['daily_streams']),
+                                'listeners': listeners,
+                                'date': datetime.now().date()
+                            })
                     except Exception as e:
                         logger.error(f"Erreur lors du traitement de l'artiste {artist_id}: {str(e)}")
             
@@ -160,5 +172,6 @@ def run_scheduler():
         except Exception as e:
             logger.error(f"Erreur dans le planificateur: {str(e)}", exc_info=True)
             time.sleep(300)
+
 if __name__ == "__main__":
     run_scheduler()
