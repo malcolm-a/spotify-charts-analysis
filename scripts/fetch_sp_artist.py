@@ -7,7 +7,10 @@ from spotipy.oauth2 import SpotifyClientCredentials
 import sqlalchemy as sa
 
 def fetch_spotify_artists(batch_size=50):
-    """Fetch and update Spotify artist data for artists in database without it"""
+    """Fetch and update Spotify artist data for artists in database without it
+        Args:
+            batch_size (int): Number of artists to process in each batch. Should not exceed 50 until spotify's rate limiting changes. Defaults to 50. 
+    """
     start_time = time.time()
     session = get_session()
     credentials = SpotifyClientCredentials(
