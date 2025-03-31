@@ -88,17 +88,6 @@ def fetch_country_charts(country_code: str) -> dict:
         soup = BeautifulSoup(response.text, "html.parser")
         chart_date = (datetime.now().date() - datetime.timedelta(days=2))
         
-        # find date if available in the page
-        date_text = soup.select_one("h1")
-        if date_text:
-            date_match = re.search(r'(\w+ \d+, \d{4})', date_text.text)
-            if date_match:
-                date_str = date_match.group(1)
-                try:
-                    chart_date = datetime.strptime(date_str, '%B %d, %Y').date()
-                except ValueError:
-                    pass
-        
         charts_data = []
         songs_data = []
         artists_data = []
