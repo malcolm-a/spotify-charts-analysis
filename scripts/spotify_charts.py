@@ -2,7 +2,7 @@ import re
 import requests
 import urllib3
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 import concurrent.futures
 import time
 from tqdm import tqdm
@@ -86,7 +86,15 @@ def fetch_country_charts(country_code: str) -> dict:
             
         response.encoding = "utf-8"
         soup = BeautifulSoup(response.text, "html.parser")
-        chart_date = (datetime.now().date() - datetime.timedelta(days=2))
+        
+        chart_date = (datetime.now().date() - timedelta(days=1))
+
+        if title := soup.select_one("span.pagetitle"):
+            if date_match := re.search(r'(\d{4}/\d{2}/\d{2})', title.text):
+                try:
+                    chart_date = datetime.strptime(date_match.group(1), '%Y/%m/%d').date()
+                except ValueError:
+                    pass
         
         charts_data = []
         songs_data = []
@@ -107,10 +115,20 @@ def fetch_country_charts(country_code: str) -> dict:
             if not song_id or not song_name or not artists:
                 continue
                 
-            # extract other chart data
-            days = int(cols[3].text.strip())
-            streams = parse_number(cols[6].text.strip())
-            total_streams = parse_number(cols[10].text.strip())
+            # extract other chart data 
+            days_text = cols[3].text.strip()
+            if not days_text:
+                continue
+            else:
+                days = int(days_text)
+            
+            streams = cols[6].text.strip()
+            total_streams = cols[10].text.strip()
+            if not streams or not total_streams:
+                continue
+            else:    
+                streams = parse_number(streams)
+                total_streams = parse_number(total_streams)
             
             # add chart data
             charts_data.append({
