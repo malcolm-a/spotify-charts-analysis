@@ -49,7 +49,7 @@ class Artist_stats(Base):
     date = Column(Date, nullable=False)
     total_streams = Column(BigInteger)
     daily_streams = Column(Integer)
-    listeners = Column(Integer)
+    listeners = Column(BigInteger)
     
     
 

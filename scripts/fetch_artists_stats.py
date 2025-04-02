@@ -2,7 +2,6 @@ from bs4 import BeautifulSoup
 import db.connection
 from db.models import Artist, Artist_stats
 from db.schema import ensure_schema_exists
-import re
 import requests
 import urllib3
 import concurrent.futures
@@ -15,6 +14,9 @@ from io import StringIO
 import schedule
 import logging
 import sys
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import numpy as np
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,18 +30,44 @@ logger = logging.getLogger(__name__)
 
 urllib3.disable_warnings()
 
-def parse_number(text):
-    if not text:
+retry_strategy = Retry(
+    total=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504]
+)
+adapter = HTTPAdapter(max_retries=retry_strategy)
+http = requests.Session()
+http.mount("https://", adapter)
+http.mount("http://", adapter)
+
+def parse_number(value):
+    if value is None or value == '-':
         return None
-    return float(text.replace(",", ""))
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return float(value)
+    if isinstance(value, str):
+        return float(value.replace(",", ""))
+    return None
 
 def fetch_artist_stats(artist_id):
+    url = f'https://www.kworb.net/spotify/artist/{artist_id}_songs.html'
     try:
-        with requests.get(f'https://www.kworb.net/spotify/artist/{artist_id}_songs.html', verify=False) as response:
-            html_tables = pd.read_html(StringIO(response.text), encoding='utf-8', extract_links='all', header=0)[0].to_dict()
+        response = http.get(url, verify=False, timeout=10)
+        response.raise_for_status()
         
-        streams_total = html_tables[('Total', None)][0][0]
-        daily_total = html_tables[('Total', None)][1][0] 
+        if "No data available" in response.text:
+            return None
+            
+        tables = pd.read_html(StringIO(response.text), encoding='utf-8')
+        if not tables:
+            return None
+            
+        df = tables[0]
+        if 'Total' not in df.columns:
+            return None
+            
+        streams_total = parse_number(df.loc[0, 'Total'])
+        daily_total = parse_number(df.loc[1, 'Total'])
 
         return {
             'total_streams': streams_total,
@@ -47,63 +75,55 @@ def fetch_artist_stats(artist_id):
         }
     
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des stats pour l'artiste {artist_id}: {str(e)}")
+        logger.debug(f"Erreur stats artiste {artist_id}: {str(e)}")
         return None
 
-def fetch_listeners(base_url="https://kworb.net/spotify/listeners"):
+def fetch_listeners():
     try:
+        base_url = "https://kworb.net/spotify/listeners{}.html"
         listeners_data = []
+        stats_date = datetime.now().date() - timedelta(days=1)
         
-        for page_num in ["", "2", "3", "4"]:
-            url = f"{base_url}{page_num}.html"
-            logger.info(f"Fetching from URL: {url}")
-            
-            response = requests.get(url, verify=False)    
-            if response.status_code != 200:
-                logger.warning(f"Failed to fetch from {url}: {response.status_code}")
-                continue
+        for page in range(1, 6):
+            url = base_url.format(page if page > 1 else '')
+            try:
+                response = http.get(url, verify=False, timeout=10)
+                response.raise_for_status()
+                response.encoding = "utf-8"
+                soup = BeautifulSoup(response.text, "html.parser")
+
+                table = soup.find("table", class_="sortable")
+                if not table:
+                    continue
+                    
+                rows = table.find_all("tr")[1:]
                 
-            response.encoding = "utf-8"
-            soup = BeautifulSoup(response.text, "html.parser")
-            
-            rows = soup.select("table.sortable tbody tr")
-            logger.info(f"Found {len(rows)} rows in table on {url}")
-            
-            stats_date = datetime.now().date() - timedelta(days=1)  # default to yesterday
-            date_text = soup.find(text=lambda t: t and "Last updated:" in t)
-            if date_text:
-                date_match = re.search(r'(\d{4}/\d{2}/\d{2})', date_text)
-                if date_match:
-                    try:
-                        stats_date = datetime.strptime(date_match.group(1), '%Y/%m/%d').date()
-                    except ValueError:
-                        pass
-            
-            for row in rows:
-                cols = row.find_all("td")
-                if len(cols) >= 3:
-                    artist_link = cols[1].find('a')
-                    if artist_link:
-                        href = artist_link.get('href', '')
-                        spotify_id_match = re.search(r'artist/([^_]+)_songs\.html', href)
-                        spotify_id = spotify_id_match.group(1) if spotify_id_match else None
-                        
-                        listeners_text = cols[2].text.strip()
+                
+                for row in rows:
+                    cols = row.find_all("td")
+                    if len(cols) >= 3:
+                        artist_name = cols[1].get_text(strip=True)
+                        listeners_text = cols[2].get_text(strip=True)
                         listeners = parse_number(listeners_text)
                         
-                        if spotify_id and listeners:
+                        if artist_name and listeners is not None:
                             listeners_data.append({
-                                "spotify_id": spotify_id,
+                                "artist_name": artist_name,
                                 "listeners": listeners,
                                 "date": stats_date
                             })
+
+            except Exception as e:
+                logger.error(f"Erreur page listeners {page}: {str(e)}")
+                continue
+
         return listeners_data
 
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération des listeners: {str(e)}")
+        logger.error(f"Erreur majeure fetch_listeners: {str(e)}")
         return []
 
-def fetch_artists_stats_batch(batch_size=50, max_workers=5):
+def fetch_artists_stats_batch(batch_size=20, max_workers=5):
     logger.info("Début de la collecte des statistiques")
     start_time = time.time()
     
@@ -115,73 +135,73 @@ def fetch_artists_stats_batch(batch_size=50, max_workers=5):
         artist_ids = [artist.spotify_id for artist in artists]
         stats_to_insert = []
         listeners_data = fetch_listeners()
-        listeners_map = {item['spotify_id']: item['listeners'] for item in listeners_data}
-        
-        for i in tqdm(range(0, len(artist_ids), batch_size), desc="Processing artists"):
+        listeners_map = {item['artist_name']: item['listeners'] for item in listeners_data}
+        stats_date = datetime.now().date() - timedelta(days=1)
+        for i in tqdm(range(0, len(artist_ids), batch_size), desc="Artistes"):
             batch = artist_ids[i:i + batch_size]
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_artist = {
-                    executor.submit(fetch_artist_stats, artist_id): artist_id 
-                    for artist_id in batch
-                }
+                futures = {executor.submit(fetch_artist_stats, artist_id): artist_id for artist_id in batch}
                 
-                for future in concurrent.futures.as_completed(future_to_artist):
-                    artist_id = future_to_artist[future]
+                for future in concurrent.futures.as_completed(futures):
+                    artist_id = futures[future]
                     try:
                         stats = future.result()
                         if stats:
-                            listeners = listeners_map.get(artist_id)
-                            
-                            stats_to_insert.append({
-                                'artist_id': artist_id,
-                                'total_streams': parse_number(stats['total_streams']),
-                                'daily_streams': parse_number(stats['daily_streams']),
-                                'listeners': listeners,
-                                'date': datetime.now().date()
-                            })
+                            artist = session.query(Artist).filter_by(spotify_id=artist_id).first()
+                            if artist:
+                                stats_to_insert.append({
+                                    'artist_id': artist_id,
+                                    'total_streams': stats['total_streams'],
+                                    'daily_streams': stats['daily_streams'],
+                                    'listeners': listeners_map.get(artist.name),
+                                    'date': stats_date
+                                })
                     except Exception as e:
-                        logger.error(f"Erreur lors du traitement de l'artiste {artist_id}: {str(e)}")
+                        logger.error(f"Erreur traitement artiste {artist_id}: {str(e)}")
             
             if stats_to_insert:
-                stmt = insert(Artist_stats).values(stats_to_insert)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=['artist_id', 'date'],
-                    set_={
-                        'total_streams': stmt.excluded.total_streams,
-                        'daily_streams': stmt.excluded.daily_streams,
-                        'listeners': stmt.excluded.listeners
-                    }
-                )
-                session.execute(stmt)
-                session.commit()
-                stats_to_insert = []
+                try:
+                    stmt = insert(Artist_stats).values(stats_to_insert)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=['artist_id', 'date'],
+                        set_={
+                            'total_streams': stmt.excluded.total_streams,
+                            'daily_streams': stmt.excluded.daily_streams,
+                            'listeners': stmt.excluded.listeners
+                        }
+                    )
+                    session.execute(stmt)
+                    session.commit()
+                    stats_to_insert = []
+                except Exception as e:
+                    session.rollback()
+                    logger.error(f"Erreur DB: {str(e)}")
                 
-        logger.info(f"Collecte terminée avec succès. Durée: {time.time() - start_time:.2f} secondes")
+        logger.info(f"Collecte terminée en {time.time() - start_time:.2f}s")
             
     except Exception as e:
         session.rollback()
-        logger.error(f"Erreur dans fetch_artists_stats_batch: {str(e)}", exc_info=True)
+        logger.error(f"Erreur majeure: {str(e)}", exc_info=True)
     finally:
         session.close()
 
 def run_scheduler():
-    fetch_artists_stats_batch()
-    
-    schedule.every(24).hours.do(fetch_artists_stats_batch)
-    
-    logger.info("Planificateur démarré. Prochaine exécution programmée toutes les 24 heures.")
-    
-    while True:
-        try:
+    try:
+        fetch_artists_stats_batch()
+        
+        schedule.every(24).hours.do(fetch_artists_stats_batch)
+        logger.info("Planificateur démarré. Utilisez CTRL+C pour quitter.")
+        
+        while True:
             schedule.run_pending()
-            time.sleep(60)
-        except KeyboardInterrupt:
-            logger.info("Arrêt manuel du planificateur")
-            break
-        except Exception as e:
-            logger.error(f"Erreur dans le planificateur: {str(e)}", exc_info=True)
-            time.sleep(300)
+            time.sleep(1)
+            
+    except KeyboardInterrupt:
+        logger.info("\nScript arrêté. Pour relancer :")
+        logger.info("python3 fetch_artists_stats.py")
+    except Exception as e:
+        logger.error(f"Erreur : {str(e)}")
 
 if __name__ == "__main__":
     run_scheduler()
