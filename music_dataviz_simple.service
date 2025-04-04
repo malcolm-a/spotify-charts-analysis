@@ -1,0 +1,14 @@
+[Unit]
+Description=Simple Music Data Viz Service
+After=network.target
+
+[Service]
+User=malcolm
+Group=malcolm
+WorkingDirectory=/home/malcolm/music_dataviz_prod/sae_datavis
+Environment="PYTHONPATH=/home/malcolm/music_dataviz_prod/sae_datavis"
+ExecStart=/usr/bin/python3 /home/malcolm/music_dataviz_prod/sae_datavis/run_dataviz.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
