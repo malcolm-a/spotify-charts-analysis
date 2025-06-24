@@ -1,6 +1,6 @@
-# Music-Viz
+# Spotify Charts Analysis
 
-Music-Viz is a data project designed to collect, store, and analyze music streaming data from various online sources. It fetches daily information about artists, songs, and charts from Spotify and Kworb.net, saving the data into a PostgreSQL database for further analysis and visualization with Metabase.
+A data project designed to collect, store, and analyze music streaming data from various online sources. It fetches daily information about artists, songs, and charts from Spotify and Kworb.net, saving the data into a PostgreSQL database for further analysis and visualization with Metabase.
 
 ## Features
 
@@ -21,7 +21,7 @@ Follow these steps to get the project up and running on your local machine.
 
 ### 1. Clone the Repository
 
-```sh
+```sh[
 git clone https://github.com/malcolm-a/music-viz
 cd music-viz
 ```
