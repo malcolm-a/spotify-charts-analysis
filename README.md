@@ -22,7 +22,7 @@ Follow these steps to get the project up and running on your local machine.
 ### 1. Clone the Repository
 
 ```sh[
-git clone https://github.com/malcolm-a/music-viz
+git clone https://github.com/malcolm-a/spotify-charts-analysis
 cd music-viz
 ```
 
