@@ -1,6 +1,6 @@
 # Spotify Charts Analysis - ETL Pipeline
 
-A comprehensive **Data Engineering ETL pipeline** that collects, processes, and analyzes music streaming data from multiple sources. It is aimed at providing all the data needed for analysis and visualization of music trends and preferences per market.
+A **Data Engineering ETL pipeline** that collects, processes, and analyzes music streaming data from multiple sources. It is aimed at providing all the data needed for analysis and visualization of music trends and preferences per market.
 
 ## 👷🏾‍♂️ Project Architecture
 
