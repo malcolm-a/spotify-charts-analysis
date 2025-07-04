@@ -1,8 +1,10 @@
 __pycache__
-.venv
+.venv/
 data
 .DS_Store
 network.py
 .env
 .cache
 *.pyc
+*.log
+.pytest_cache/
