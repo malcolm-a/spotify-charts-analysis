@@ -1,17 +1,17 @@
-# Spotify Charts Analysis
+# Spotify Charts Analysis - ETL Pipeline
 
-A data project designed to collect, store, and analyze music streaming data from various online sources. It fetches daily information about artists, songs, and charts from Spotify and Kworb.net, saving the data into a PostgreSQL database for further analysis and visualization with Metabase.
+A comprehensive **Data Engineering ETL pipeline** that collects, processes, and analyzes music streaming data from multiple sources. It is aimed at providing all the data needed for analysis and visualization of music trends and preferences per market.
 
-## Features
+## 👷🏾‍♂️ Project Architecture
 
-- **Automated Data Collection**: Scripts to automatically fetch daily Spotify charts, artist statistics, track details, and more.
-- **Robust Database Schema**: Utilizes a PostgreSQL database with a schema managed by SQLAlchemy and Alembic for migrations.
-- **Dockerized Environment**: Comes with a `docker-compose.yml` for easy setup of a development environment, including PostgreSQL, Metabase for business intelligence, and Adminer/pgAdmin for database management.
-- **Scheduled Jobs**: Scripts are designed to be run on a schedule to ensure the data stays current.
+This is a project that implements:
+- **Extract**: Data collection from Spotify API, kworb.net charts, and streaming statistics
+- **Transform**: Data cleaning, normalization, and enrichment
+- **Load**: Bulk operations into PostgreSQL with upsert capabilities
+- **Orchestration**: Automated pipeline scheduling
 
-## Getting Started
 
-Follow these steps to get the project up and running on your local machine.
+## 🚀 Getting Started
 
 ### Prerequisites
 
@@ -21,67 +21,88 @@ Follow these steps to get the project up and running on your local machine.
 
 ### 1. Clone the Repository
 
-```sh[
-git clone https://github.com/malcolm-a/spotify-charts-analysis
-cd music-viz
+```bash
+git clone https://github.com/your-username/spotify-charts-analysis
+cd spotify-charts-analysis
 ```
 
 ### 2. Set Up Environment Variables
 
-You'll need to provide credentials for the database and the Spotify API. Create a `.env` file in the project root:
+Copy the example environment file and configure it:
 
-```env
-# .env file
-# PostgreSQL Connection
-DB_HOST=db
-DB_PORT=5432
-DB_NAME=
-DB_USER=
-DB_PASSWORD=
-
-# Spotify API Credentials
-SPOTIFY_CLIENT_ID=
-SPOTIFY_CLIENT_SECRET=
+```bash
+cp .env.example .env
 ```
-**Note**: The default database credentials in the `.env` file match the ones in `docker-compose.yml`.
+
+Edit `.env` with your actual credentials:
+```env
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=spotify_charts
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+# Spotify API Credentials (get from https://developer.spotify.com/dashboard/)
+SPOTIFY_CLIENT_ID=your_actual_spotify_client_id
+SPOTIFY_CLIENT_SECRET=your_actual_spotify_client_secret
+```
 
 ### 3. Install Dependencies
 
-Install the required Python packages using pip:
-
-```sh
-pip install -r requirements.txt
+```bash
+pip install -r config/requirements.txt
 ```
 
-### 4. Launch Services with Docker
+### 4. Launch Infrastructure
 
-Start the PostgreSQL database and other services using Docker Compose:
-
-```sh
+```bash
+cd docker
 docker-compose up -d
 ```
 
-### 5. Apply Database Migrations
+### 5. Initialize Database
 
-Once the database container is running, apply the latest schema migrations using Alembic:
-
-```sh
-alembic upgrade head
+```bash
+python scripts/setup_database.py
 ```
 
-## Usage
+## 👨🏾‍💻 Usage
 
-The data collection scripts are located in the `scripts/` directory. You can run them individually to populate your database.
+### Run Complete ETL Pipeline
 
-To run all the scripts in a sequence for a full data refresh, you can use the `run_dataviz.py` script, which is also designed to be run as a service.
+```bash
+# Run all pipelines once
+python scripts/run_etl_pipeline.py
 
-## Database Schema
+# Run with continuous scheduling
+python scripts/run_etl_pipeline.py scheduler
+```
 
-The main database tables are:
+### Run Individual Pipelines
 
-- `artist`: Stores artists' information, including their Spotify ID and name.
-- `song`: Stores songs' information, including their song ID and name.
-- `artist_song`: A many-to-many association table linking artists and songs.
-- `country`: A list of countries used for region-specific charts.
-- `spotify_charts`: Contains daily song chart data, including rank and stream counts for each country.
-- `artist_stats`: Stores daily statistics for artists, such as total streams and listener counts.
+```bash
+# Daily charts only
+python -m src.pipelines.orchestrator --mode charts
+
+# Artist stats only  
+python -m src.pipelines.orchestrator --mode stats
+
+# Spotify metadata only
+python -m src.pipelines.orchestrator --mode metadata
+```
+
+### Test Components
+
+```bash
+# Run test suite with pytest
+pytest scripts/test_etl.py -v
+```
+
+
+## 🌐 Data Sources
+
+- **Spotify Web API**: Artist metadata, track features, audio analysis
+- **kworb.net**: Daily charts, streaming statistics, listener counts
+- **MusicBrainz**: Artist identification and metadata enrichment (unused)
+
